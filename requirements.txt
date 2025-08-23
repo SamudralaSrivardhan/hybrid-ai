@@ -1,0 +1,6 @@
+flask
+pdfplumber
+scikit-learn
+requests
+pyttsx3
+duckduckgo-search
