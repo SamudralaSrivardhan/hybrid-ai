@@ -6,26 +6,12 @@ from sklearn.metrics.pairwise import cosine_similarity
 import requests
 import pyttsx3
 from duckduckgo_search import DDGS
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
 
 class HybridAI:
-    def forget_pdf(self, pdf_id):
-        conn = sqlite3.connect(self.db_path)
-        c = conn.cursor()
-        # Get the filename for the given pdf_id
-        c.execute("SELECT filename FROM pdf_files WHERE id=?", (pdf_id,))
-        row = c.fetchone()
-        if not row:
-            conn.close()
-            return f"No PDF found with ID {pdf_id}"
-        filename = row[0]
-        # Delete all memory entries related to this PDF
-        c.execute("DELETE FROM memory WHERE source=?", (f"pdf:{filename}",))
-        # Delete the PDF record
-        c.execute("DELETE FROM pdf_files WHERE id=?", (pdf_id,))
-        conn.commit()
-        conn.close()
-        return f"Forgot PDF '{filename}' and all related memory."
-    def __init__(self, db_path="hybrid_ai_v2.db"):  # Fixed constructor name
+    def __init__(self, db_path="hybrid_ai_v2.db"):
         self.db_path = db_path
         self._init_db()
         self.vectorizer = TfidfVectorizer()
@@ -77,7 +63,6 @@ class HybridAI:
                 for page in pdf.pages:
                     text = page.extract_text()
                     if text:
-                        # split into smaller chunks
                         for chunk in text.split("\n"):
                             if chunk.strip():
                                 text_chunks.append(chunk.strip())
@@ -137,6 +122,21 @@ class HybridAI:
         conn.close()
         return f"Deleted memory with ID {memory_id}"
 
+    def forget_pdf(self, pdf_id):
+        conn = sqlite3.connect(self.db_path)
+        c = conn.cursor()
+        c.execute("SELECT filename FROM pdf_files WHERE id=?", (pdf_id,))
+        row = c.fetchone()
+        if not row:
+            conn.close()
+            return f"No PDF found with ID {pdf_id}"
+        filename = row[0]
+        c.execute("DELETE FROM memory WHERE source=?", (f"pdf:{filename}",))
+        c.execute("DELETE FROM pdf_files WHERE id=?", (pdf_id,))
+        conn.commit()
+        conn.close()
+        return f"Forgot PDF '{filename}' and all related memory."
+
     def list_pdfs(self):
         conn = sqlite3.connect(self.db_path)
         c = conn.cursor()
@@ -154,49 +154,63 @@ class HybridAI:
             self.engine.say(text)
             self.engine.runAndWait()
 
-if __name__ == "__main__":
-    ai = HybridAI()
-    print("Hybrid AI v2 (PDF chunking + summarization).")
-    print("Commands: ingest_pdf <path> | say | ask | list | list_pdfs | forget <id> | forget_pdf <pdf_id> | tts_on | tts_off | exit")
+ai = HybridAI()
 
-    while True:
-        cmd = input("\n> ").strip()
-        if cmd.startswith("ingest_pdf"):
-            parts = cmd.split(maxsplit=1)
-            if len(parts) == 2:
-                path = parts[1]
-                print(ai.ingest_pdf(path))
-            else:
-                print("Usage: ingest_pdf <path>")
-        elif cmd == "say":
-            text = input("Enter text: ")
-            print(ai.say(text))
-        elif cmd == "ask":
-            question = input("Question: ")
-            print(ai.ask(question))
-        elif cmd == "list":
-            for mem in ai.list_memory():
-                print(mem)
-        elif cmd == "list_pdfs":
-            for pdf in ai.list_pdfs():
-                print(pdf)
-        elif cmd.startswith("forget"):
-            parts = cmd.split()
-            if len(parts) == 2 and parts[1].isdigit():
-                print(ai.forget(int(parts[1])))
-            else:
-                print("Usage: forget <memory_id>")
-        elif cmd.startswith("forget_pdf"):
-            parts = cmd.split()
-            if len(parts) == 2 and parts[1].isdigit():
-                print(ai.forget_pdf(int(parts[1])))
-            else:
-                print("Usage: forget_pdf <pdf_id>")
-        elif cmd == "tts_on":
-            print(ai.toggle_tts(True))
-        elif cmd == "tts_off":
-            print(ai.toggle_tts(False))
-        elif cmd == "exit":
-            break
-        else:
-            print("Unknown command.")
+@app.route('/')
+def index():
+    return "Hybrid AI v2 API is running!"
+
+@app.route('/ingest_pdf', methods=['POST'])
+def api_ingest_pdf():
+    data = request.json
+    pdf_path = data.get('pdf_path')
+    result = ai.ingest_pdf(pdf_path)
+    return jsonify({'result': result})
+
+@app.route('/ask', methods=['POST'])
+def api_ask():
+    data = request.json
+    query = data.get('query')
+    result = ai.ask(query)
+    return jsonify({'result': result})
+
+@app.route('/say', methods=['POST'])
+def api_say():
+    data = request.json
+    text = data.get('text')
+    result = ai.say(text)
+    return jsonify({'result': result})
+
+@app.route('/list_memory', methods=['GET'])
+def api_list_memory():
+    result = ai.list_memory()
+    return jsonify({'memory': result})
+
+@app.route('/list_pdfs', methods=['GET'])
+def api_list_pdfs():
+    result = ai.list_pdfs()
+    return jsonify({'pdfs': result})
+
+@app.route('/forget', methods=['POST'])
+def api_forget():
+    data = request.json
+    memory_id = data.get('memory_id')
+    result = ai.forget(memory_id)
+    return jsonify({'result': result})
+
+@app.route('/forget_pdf', methods=['POST'])
+def api_forget_pdf():
+    data = request.json
+    pdf_id = data.get('pdf_id')
+    result = ai.forget_pdf(pdf_id)
+    return jsonify({'result': result})
+
+@app.route('/toggle_tts', methods=['POST'])
+def api_toggle_tts():
+    data = request.json
+    enable = data.get('enable', True)
+    result = ai.toggle_tts(enable)
+    return jsonify({'result': result})
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
