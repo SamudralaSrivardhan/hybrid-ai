@@ -1,7 +1,8 @@
-flask
+Flask>=2.0
+gunicorn
 pdfplumber
 scikit-learn
+duckduckgo_search
 requests
 pyttsx3
-duckduckgo-search
-profile
+numpy
